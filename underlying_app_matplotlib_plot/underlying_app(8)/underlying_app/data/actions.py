@@ -35,7 +35,7 @@ def action_2(raptor: pd.DataFrame) -> pd.DataFrame:
 
     out = raptor.sort_values(by=sort_col, ascending=False, na_position="last").head(1000).copy()
     preferred = [c for c in ["scheme_id", "underlying_isin", "Issuer", "Type", "OptionType", "currency", "Maturity",
-                             "strike", "leverage", "Bid", "Ask", "px_last", "open_interest", "volume_1d", "spread_bps", "iv_30d"]
+                             "Strike", "leverage", "Bid", "Ask", "px_last", "open_interest", "volume_1d", "spread_bps", "iv_30d"]
                  if c in out.columns]
     if len(preferred) >= 8:
         out = out[preferred]
@@ -84,14 +84,66 @@ def action_5(raptor: pd.DataFrame) -> pd.DataFrame:
 
 
 def action_issuer_plot_table(raptor: pd.DataFrame) -> pd.DataFrame:
+    """Table backing the 'Issuer Plot' view.
+
+    This is intentionally **not** a groupby/aggregation: we return a filtered slice of the raw
+    Raptor dataframe so a table row corresponds to a concrete point that can be highlighted
+    in the plot.
+
+    Required columns for plotting:
+      - Strike (x)
+      - Sized_GAP_Ask (y)
+      - Issuer, Type, Maturity (for filtering / coloring)
+      - Bid, Ask (requested)
+    """
     _require_df(raptor, "Raptor")
-    if "Issuer" not in raptor.columns:
-        return pd.DataFrame({"info": ["Missing issuer column"]})
-    out = raptor.groupby("Issuer", observed=True).agg(
-        count=("Issuer", "size"),
-        avg_spread_bps=("spread_bps", "mean") if "spread_bps" in raptor.columns else ("Issuer", "size"),
-        avg_strike=("strike", "mean") if "strike" in raptor.columns else ("Issuer", "size"),
-    ).reset_index()
+
+    # Resolve canonical column names with safe fallbacks
+    col_issuer = "Issuer" if "Issuer" in raptor.columns else ("issuer" if "issuer" in raptor.columns else ("ISSUER" if "ISSUER" in raptor.columns else None))
+    col_type = "Type" if "Type" in raptor.columns else ("product" if "product" in raptor.columns else None)
+    col_opt = "OptionType" if "OptionType" in raptor.columns else ("callput" if "callput" in raptor.columns else ("type" if "type" in raptor.columns else None))
+    col_mat = "Maturity" if "Maturity" in raptor.columns else ("maturity" if "maturity" in raptor.columns else None)
+
+    # Ensure mandatory plot cols exist (Strike, Sized_GAP_Ask, Bid, Ask)
+    col_strike = "Strike" if "Strike" in raptor.columns else ("strike" if "strike" in raptor.columns else None)
+    col_gap = "Sized_GAP_Ask" if "Sized_GAP_Ask" in raptor.columns else None
+    col_bid = "Bid" if "Bid" in raptor.columns else ("bid" if "bid" in raptor.columns else None)
+    col_ask = "Ask" if "Ask" in raptor.columns else ("ask" if "ask" in raptor.columns else None)
+
+    missing = [n for n, c in [("Issuer", col_issuer), ("Type", col_type), ("Maturity", col_mat),
+                             ("Strike", col_strike), ("Sized_GAP_Ask", col_gap), ("Bid", col_bid), ("Ask", col_ask)] if c is None]
+    if missing:
+        return pd.DataFrame({"info": [f"Missing required columns: {', '.join(missing)}"]})
+
+    # Build output slice, keeping a few extra useful columns if present
+    base_cols = {
+        "Issuer": col_issuer,
+        "Type": col_type,
+        "OptionType": col_opt,
+        "Maturity": col_mat,
+        "Strike": col_strike,
+        "Sized_GAP_Ask": col_gap,
+        "Bid": col_bid,
+        "Ask": col_ask,
+    }
+    extra_keep = [c for c in ["Underlying", "underlying", "spot", "Spot", "delta", "gamma", "vega", "theta", "rho", "spread_bps"] if c in raptor.columns]
+    cols_in = [c for c in base_cols.values() if c is not None] + extra_keep
+
+    out = raptor.loc[:, cols_in].copy()
+
+    # Rename to canonical names
+    rename_map = {v: k for k, v in base_cols.items() if v is not None}
+    out = out.rename(columns=rename_map)
+
+    # Coerce dtypes for better sorting/filtering
+    out["Strike"] = pd.to_numeric(out["Strike"], errors="coerce")
+    out["Sized_GAP_Ask"] = pd.to_numeric(out["Sized_GAP_Ask"], errors="coerce")
+    out["Bid"] = pd.to_numeric(out["Bid"], errors="coerce")
+    out["Ask"] = pd.to_numeric(out["Ask"], errors="coerce")
+
+    # Sort: biggest gaps first, then strike
+    out = out.sort_values(by=["Sized_GAP_Ask", "Strike"], ascending=[False, True], kind="mergesort")
+
     return out
 
 

@@ -44,11 +44,13 @@ def make_fake_raptor_from_underlyings(underlyings: pd.DataFrame, n_rows: int = 1
     issuer = rng.choice(["BNP", "SG", "HSBC", "CITI", "UBS", "DB"], size=n_rows)
     currency = rng.choice(["EUR", "USD", "GBP"], size=n_rows)
     Type = rng.choice(["Producto1", "Producto2", "Producto3"], size=n_rows)
-    OptionType = rng.choice(["call", "put"], size=n_rows)
+    OptionType = rng.choice(["Call", "Put"], size=n_rows)
 
     px_bid = np.round(rng.lognormal(0.0, 0.6, size=n_rows), 3)
     px_ask = np.round(px_bid + rng.uniform(0.001, 0.05, size=n_rows), 3)
     px_last = np.round((px_bid + px_ask) / 2.0 + rng.normal(0, 0.01, size=n_rows), 3)
+
+    sized_gap_ask = np.round((px_ask - px_bid) * rng.uniform(50, 250, size=n_rows), 6)
 
     df = pd.DataFrame({
         "scheme_id": scheme_id,
@@ -62,7 +64,8 @@ def make_fake_raptor_from_underlyings(underlyings: pd.DataFrame, n_rows: int = 1
 
         "Maturity": pd.to_datetime(maturity),
 
-        "strike": np.round(rng.lognormal(3.4, 0.35, size=n_rows), 2),
+        # NOTE: keep exact column casing expected by the UI/actions
+        "Strike": np.round(rng.lognormal(3.4, 0.35, size=n_rows), 2),
         "leverage": np.round(rng.uniform(1.0, 25.0, size=n_rows), 2),
         "barrier": np.round(rng.lognormal(3.35, 0.40, size=n_rows), 2),
         "open_interest": rng.integers(0, 200000, size=n_rows),
@@ -82,6 +85,8 @@ def make_fake_raptor_from_underlyings(underlyings: pd.DataFrame, n_rows: int = 1
 
         "Bid": px_bid,
         "Ask": px_ask,
+
+        "Sized_GAP_Ask": sized_gap_ask,
 
         "is_listed": rng.choice([True, False], size=n_rows, p=[0.97, 0.03]),
         "risk_bucket": rng.integers(1, 6, size=n_rows),
